@@ -4,13 +4,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="styles.css">
     <script src="script.js" defer></script>
     <title>Pong</title>
 </head>
 
 <body>
     <h1>Pong Game</h1>
+
+    <div class="scoreboard">
+        <div class="score" id="score-left">0</div>
+        <div class="score" id="score-right">0</div>
+    </div>
+
+    <div class="game-wrapper">
+        <canvas id="game" width="800" height="500"></canvas>
+
+        <div class="overlay" id="overlay">
+            <div class="winner-text" id="overlay-text">Pong</div>
+            <button id="btn-start">INICIAR JUEGO</button>
+        </div>
+    </div>
+
+    <div class="controls">
+        Jugador Izquierdo (<span>azul</span>): W (arriba) / S (abajo)<br>
+        Jugador Derecho (<span>rojo</span>): ↑ (arriba) / ↓ (abajo)
+    </div>
 </body>
 
 </html>
