@@ -67,8 +67,8 @@ function createBall() {
   const angle = randomAngle();
   const direction = Math.random() < 0.5 ? 1 : -1;
   return {
-    x: W / 2,
-    y: H / 2,
+    x: W / 2 + (Math.random() * 30 - 15),
+    y: H / 2 + (Math.random() * 30 - 15),
     r: BALL_RADIUS,
     speed: BALL_BASE_SPEED,
     vx: Math.cos(angle) * BALL_BASE_SPEED * direction,
@@ -78,6 +78,10 @@ function createBall() {
     real: true,
     id: nextBallId++,
   };
+}
+
+function addBall() {
+  balls.push(createBall());
 }
 
 function resetBall() {
@@ -96,6 +100,9 @@ function initGame() {
 window.addEventListener('keydown', (e) => {
   if (e.key === 'w' || e.key === 'W') keys.w = true;
   if (e.key === 's' || e.key === 'S') keys.s = true;
+  if (e.key === 'q' || e.key === 'Q') {
+    addBall();
+  }
   if (e.key === 'ArrowUp') {
     keys.ArrowUp = true;
     e.preventDefault();
@@ -160,17 +167,15 @@ function updateBall(ball) {
     bounceFromPaddle(ball, rightPaddle);
   }
 
-  // Punto para la derecha (la pelota salió por la izquierda)
   if (ball.x + ball.r < 0) {
-    scoreRight++;
-    handlePoint();
+    return 'RIGHT';
   }
 
-  // Punto para la izquierda (la pelota salió por la derecha)
   if (ball.x - ball.r > W) {
-    scoreLeft++;
-    handlePoint();
+    return 'LEFT';
   }
+
+  return null;
 }
 
 function bounceFromPaddle(ball, paddle) {
@@ -282,10 +287,25 @@ function draw() {
 function gameLoop() {
   if (running && !paused) {
     movePaddles();
+    let point = null;
 
     balls.forEach((ball) => {
-      updateBall(ball);
+      const result = updateBall(ball);
+
+      if (result) {
+        point = result;
+      }
     });
+
+    if (point === 'LEFT') {
+      scoreLeft++;
+      handlePoint();
+    }
+
+    if (point === 'RIGHT') {
+      scoreRight++;
+      handlePoint();
+    }
   }
   draw();
   requestAnimationFrame(gameLoop);
