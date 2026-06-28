@@ -19,7 +19,9 @@ const scoreLeftEl = document.getElementById('score-left');
 const scoreRightEl = document.getElementById('score-right');
 
 // ---------- Estado del juego ----------
-let leftPaddle, rightPaddle, ball;
+let leftPaddle, rightPaddle;
+let balls = [];
+let nextBallId = 1; // para identificar pelotas
 let scoreLeft = 0;
 let scoreRight = 0;
 let running = false; // arranca pausado
@@ -33,7 +35,6 @@ const keys = {
   ArrowDown: false,
 };
 
-// ---------- Inicialización de entidades ----------
 function createPaddles() {
   leftPaddle = {
     x: 30,
@@ -53,30 +54,34 @@ function createPaddles() {
 }
 
 function randomAngle() {
-  // Ángulo aleatorio evitando que salga demasiado plano (cerca de 0°)
-  // o demasiado vertical (cerca de 90°), para que el juego sea jugable.
-  const min = 0.25; // ~14°
-  const max = 0.75; // ~43°
+  const min = 0.25;
+  const max = 0.75;
   let angle = min + Math.random() * (max - min);
 
-  // Signo aleatorio para arriba/abajo
   if (Math.random() < 0.5) angle = -angle;
 
   return angle;
 }
 
-function resetBall() {
+function createBall() {
   const angle = randomAngle();
-  const direction = Math.random() < 0.5 ? 1 : -1; // hacia izquierda o derecha
-
-  ball = {
+  const direction = Math.random() < 0.5 ? 1 : -1;
+  return {
     x: W / 2,
     y: H / 2,
     r: BALL_RADIUS,
     speed: BALL_BASE_SPEED,
     vx: Math.cos(angle) * BALL_BASE_SPEED * direction,
     vy: Math.sin(angle) * BALL_BASE_SPEED,
+
+    // para las multiples pelotas
+    real: true,
+    id: nextBallId++,
   };
+}
+
+function resetBall() {
+  balls = [createBall()];
 }
 
 function initGame() {
@@ -88,7 +93,6 @@ function initGame() {
   updateScoreboard();
 }
 
-// ---------- Controles ----------
 window.addEventListener('keydown', (e) => {
   if (e.key === 'w' || e.key === 'W') keys.w = true;
   if (e.key === 's' || e.key === 'S') keys.s = true;
@@ -116,13 +120,12 @@ function movePaddles() {
   if (keys.ArrowUp) rightPaddle.y -= PADDLE_SPEED;
   if (keys.ArrowDown) rightPaddle.y += PADDLE_SPEED;
 
-  // Limitar paletas dentro del canvas
   leftPaddle.y = Math.max(0, Math.min(H - leftPaddle.h, leftPaddle.y));
   rightPaddle.y = Math.max(0, Math.min(H - rightPaddle.h, rightPaddle.y));
 }
 
 // ---------- Física de la pelota ----------
-function updateBall() {
+function updateBall(ball) {
   ball.x += ball.vx;
   ball.y += ball.vy;
 
@@ -143,7 +146,7 @@ function updateBall() {
     ball.y <= leftPaddle.y + leftPaddle.h &&
     ball.vx < 0
   ) {
-    bounceFromPaddle(leftPaddle);
+    bounceFromPaddle(ball, leftPaddle);
   }
 
   // Colisión con paleta derecha
@@ -154,7 +157,7 @@ function updateBall() {
     ball.y <= rightPaddle.y + rightPaddle.h &&
     ball.vx > 0
   ) {
-    bounceFromPaddle(rightPaddle);
+    bounceFromPaddle(ball, rightPaddle);
   }
 
   // Punto para la derecha (la pelota salió por la izquierda)
@@ -170,20 +173,18 @@ function updateBall() {
   }
 }
 
-function bounceFromPaddle(paddle) {
-  // Calcula en qué punto de la paleta golpeó (entre -1 y 1)
+function bounceFromPaddle(ball, paddle) {
   const relativeIntersect =
     (ball.y - (paddle.y + paddle.h / 2)) / (paddle.h / 2);
-  const bounceAngle = relativeIntersect * (Math.PI / 3); // máx ~60°
+  const bounceAngle = relativeIntersect * (Math.PI / 3);
 
-  // Aumenta levemente la velocidad en cada rebote
+  // pelota cada vez mas rapida
   ball.speed = Math.min(ball.speed + 0.4, 14);
 
   const direction = paddle === leftPaddle ? 1 : -1;
   ball.vx = Math.cos(bounceAngle) * ball.speed * direction;
   ball.vy = Math.sin(bounceAngle) * ball.speed;
 
-  // Evita que la pelota quede "pegada" a la paleta
   ball.x = direction === 1 ? paddle.x + paddle.w + ball.r : paddle.x - ball.r;
 }
 
@@ -202,7 +203,6 @@ function updateScoreboard() {
   scoreRightEl.textContent = scoreRight;
 }
 
-// ---------- Estados del juego ----------
 function endGame() {
   running = false;
   gameOver = true;
@@ -248,11 +248,11 @@ btnStart.addEventListener('click', startGame);
 
 // ---------- Dibujo ----------
 function draw() {
-  // Fondo
+  // fondo
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, W, H);
 
-  // Línea central punteada
+  // linea del medio
   ctx.strokeStyle = '#333';
   ctx.lineWidth = 2;
   ctx.setLineDash([10, 12]);
@@ -262,31 +262,35 @@ function draw() {
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // Paletas
+  // paletas
   ctx.fillStyle = leftPaddle.color;
   ctx.fillRect(leftPaddle.x, leftPaddle.y, leftPaddle.w, leftPaddle.h);
 
   ctx.fillStyle = rightPaddle.color;
   ctx.fillRect(rightPaddle.x, rightPaddle.y, rightPaddle.w, rightPaddle.h);
 
-  // Pelota
-  ctx.fillStyle = '#fff';
-  ctx.beginPath();
-  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
-  ctx.fill();
+  // pelotas
+  balls.forEach((ball) => {
+    ctx.fillStyle = ball.real ? '#ffffff' : '#aaaaaa';
+
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
 }
 
-// ---------- Loop principal ----------
 function gameLoop() {
   if (running && !paused) {
     movePaddles();
-    updateBall();
+
+    balls.forEach((ball) => {
+      updateBall(ball);
+    });
   }
   draw();
   requestAnimationFrame(gameLoop);
 }
 
-// ---------- Arranque ----------
 initGame();
 draw();
 gameLoop();
