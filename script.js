@@ -11,6 +11,7 @@ const PADDLE_SPEED = 7;
 const BALL_RADIUS = 8;
 const BALL_BASE_SPEED = 6;
 const WINNING_SCORE = 10;
+const DUPLICATION_INTERVAL = 3000;
 
 const overlay = document.getElementById('overlay');
 const overlayText = document.getElementById('overlay-text');
@@ -27,6 +28,8 @@ let scoreRight = 0;
 let running = false; // arranca pausado
 let gameOver = false;
 let paused = false;
+let duplicationTimer = 0;
+let realBallId = null;
 
 const keys = {
   w: false,
@@ -75,7 +78,7 @@ function createBall() {
     vy: Math.sin(angle) * BALL_BASE_SPEED,
 
     // para las multiples pelotas
-    real: true,
+    real: false,
     id: nextBallId++,
   };
 }
@@ -86,6 +89,7 @@ function addBall() {
 
 function resetBall() {
   balls = [createBall()];
+  realBallId = balls[0].id;
 }
 
 function initGame() {
@@ -131,6 +135,12 @@ function movePaddles() {
   rightPaddle.y = Math.max(0, Math.min(H - rightPaddle.h, rightPaddle.y));
 }
 
+function getOutOfBounds(ball) {
+  if (ball.x + ball.r < 0) return 'RIGHT';
+  if (ball.x - ball.r > W) return 'LEFT';
+  return null;
+}
+
 // ---------- Física de la pelota ----------
 function updateBall(ball) {
   ball.x += ball.vx;
@@ -166,16 +176,6 @@ function updateBall(ball) {
   ) {
     bounceFromPaddle(ball, rightPaddle);
   }
-
-  if (ball.x + ball.r < 0) {
-    return 'RIGHT';
-  }
-
-  if (ball.x - ball.r > W) {
-    return 'LEFT';
-  }
-
-  return null;
 }
 
 function bounceFromPaddle(ball, paddle) {
@@ -191,6 +191,26 @@ function bounceFromPaddle(ball, paddle) {
   ball.vy = Math.sin(bounceAngle) * ball.speed;
 
   ball.x = direction === 1 ? paddle.x + paddle.w + ball.r : paddle.x - ball.r;
+}
+
+function duplicateBalls() {
+  const currentBalls = [...balls];
+  balls = [];
+
+  currentBalls.forEach((ball) => {
+    for (let i = 0; i < 2; i++) {
+      balls.push({
+        ...ball,
+        vx: ball.vx + (Math.random() * 2 - 1),
+        vy: ball.vy + (Math.random() * 2 - 1),
+        real: false,
+        id: nextBallId++,
+      });
+    }
+  });
+
+  const randomIndex = Math.floor(Math.random() * balls.length);
+  realBallId = balls[randomIndex].id;
 }
 
 function handlePoint() {
@@ -276,7 +296,7 @@ function draw() {
 
   // pelotas
   balls.forEach((ball) => {
-    ctx.fillStyle = ball.real ? '#ffffff' : '#aaaaaa';
+    ctx.fillStyle = ball.id === realBallId ? '#ffffff' : '#666666';
 
     ctx.beginPath();
     ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
@@ -287,26 +307,28 @@ function draw() {
 function gameLoop() {
   if (running && !paused) {
     movePaddles();
-    let point = null;
 
-    balls.forEach((ball) => {
-      const result = updateBall(ball);
+    balls.forEach((ball) => updateBall(ball));
 
-      if (result) {
-        point = result;
+    const realBall = balls.find((b) => b.id === realBallId);
+
+    if (realBall) {
+      const out = getOutOfBounds(realBall);
+
+      if (out === 'LEFT') {
+        scoreLeft++;
+        handlePoint();
       }
-    });
 
-    if (point === 'LEFT') {
-      scoreLeft++;
-      handlePoint();
+      if (out === 'RIGHT') {
+        scoreRight++;
+        handlePoint();
+      }
     }
 
-    if (point === 'RIGHT') {
-      scoreRight++;
-      handlePoint();
-    }
+    duplicationTimer += 16.6;
   }
+
   draw();
   requestAnimationFrame(gameLoop);
 }
