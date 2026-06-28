@@ -30,6 +30,7 @@ let gameOver = false;
 let paused = false;
 let duplicationTimer = 0;
 let realBallId = null;
+let changeWarning = false;
 
 const keys = {
   w: false,
@@ -213,6 +214,15 @@ function duplicateBalls() {
   realBallId = balls[randomIndex].id;
 }
 
+function duplicationWarning() {
+  changeWarning = true;
+
+  setTimeout(() => {
+    duplicateBalls();
+    changeWarning = false;
+  }, 200);
+}
+
 function handlePoint() {
   updateScoreboard();
 
@@ -294,9 +304,19 @@ function draw() {
   ctx.fillStyle = rightPaddle.color;
   ctx.fillRect(rightPaddle.x, rightPaddle.y, rightPaddle.w, rightPaddle.h);
 
+  if (changeWarning) {
+    ctx.fillStyle = 'rgba(255,255,255,0.05)';
+    ctx.fillRect(0, 0, W, H);
+  }
+
   // pelotas
   balls.forEach((ball) => {
-    ctx.fillStyle = ball.id === realBallId ? '#ffffff' : '#666666';
+    ctx.fillStyle =
+      ball.id === realBallId
+        ? '#ffffff'
+        : changeWarning
+          ? '#aaaaaa'
+          : '#666666';
 
     ctx.beginPath();
     ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
@@ -327,6 +347,16 @@ function gameLoop() {
     }
 
     duplicationTimer += 16.6;
+
+    if (duplicationTimer >= DUPLICATION_INTERVAL) {
+      duplicateBalls();
+      duplicationTimer = 0;
+    }
+
+    if (duplicationTimer >= DUPLICATION_INTERVAL - 500 && !changeWarning) {
+      duplicationWarning();
+      duplicationTimer = 0;
+    }
   }
 
   draw();
