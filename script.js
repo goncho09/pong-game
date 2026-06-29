@@ -8,30 +8,62 @@ const H = canvas.height;
 const PADDLE_WIDTH = 14;
 const PADDLE_HEIGHT = 90;
 const PADDLE_SPEED = 7;
+
 const BALL_RADIUS = 8;
 const BALL_BASE_SPEED = 6;
-const WINNING_SCORE = 10;
-const DUPLICATION_INTERVAL = 3000;
+const MAX_SPEED = 8;
 
+const WINNING_SCORE = 10;
+
+const MAX_BALLS = 15;
+
+// ---------- UI ----------
 const overlay = document.getElementById('overlay');
 const overlayText = document.getElementById('overlay-text');
 const btnStart = document.getElementById('btn-start');
 const scoreLeftEl = document.getElementById('score-left');
 const scoreRightEl = document.getElementById('score-right');
 
-// ---------- Estado del juego ----------
+btnStart.addEventListener('click', () => {
+  if (gameOver) {
+    startGame();
+    return;
+  }
+
+  if (!running) {
+    startGame();
+    return;
+  }
+
+  togglePause();
+});
+
+// ---------- Estado ----------
 let leftPaddle, rightPaddle;
+
 let balls = [];
-let nextBallId = 1; // para identificar pelotas
+let nextBallId = 1;
+
 let scoreLeft = 0;
 let scoreRight = 0;
-let running = false; // arranca pausado
-let gameOver = false;
-let paused = false;
-let duplicationTimer = 0;
-let realBallId = null;
-let changeWarning = false;
 
+let running = false;
+let paused = false;
+let gameOver = false;
+
+let realBallId = null;
+
+let duplicationTimer = 0;
+let realChangeTimer = 0;
+
+let difficulty = 0;
+let realVisibility = 1;
+
+let serveDelay = 1000;
+let serveTimer = 0;
+let waitingServe = false;
+
+// ---------- Input ----------
 const keys = {
   w: false,
   s: false,
@@ -39,6 +71,7 @@ const keys = {
   ArrowDown: false,
 };
 
+// // ---------- Setup ----------
 function createPaddles() {
   leftPaddle = {
     x: 30,
@@ -58,77 +91,78 @@ function createPaddles() {
 }
 
 function randomAngle() {
-  const min = 0.25;
-  const max = 0.75;
-  let angle = min + Math.random() * (max - min);
+  const a = 0.25 + Math.random() * 0.5;
+  return Math.random() < 0.5 ? -a : a;
+}
 
-  if (Math.random() < 0.5) angle = -angle;
-
-  return angle;
+// spawn SIEMPRE lejos de arcos
+function safeSpawn() {
+  return {
+    x: W * 0.5 + (Math.random() * 60 - 30),
+    y: H * 0.5 + (Math.random() * 60 - 30),
+  };
 }
 
 function createBall() {
   const angle = randomAngle();
-  const direction = Math.random() < 0.5 ? 1 : -1;
+  const dir = Math.random() < 0.5 ? 1 : -1;
+
+  const vx = Math.cos(angle) * BALL_BASE_SPEED * dir;
+  const vy = Math.sin(angle) * BALL_BASE_SPEED;
+
   return {
-    x: W / 2 + (Math.random() * 30 - 15),
-    y: H / 2 + (Math.random() * 30 - 15),
-    r: BALL_RADIUS,
-    speed: BALL_BASE_SPEED,
-    vx: Math.cos(angle) * BALL_BASE_SPEED * direction,
-    vy: Math.sin(angle) * BALL_BASE_SPEED,
-
-    // para las multiples pelotas
-    real: false,
     id: nextBallId++,
+    x: W / 2,
+    y: H / 2,
+    r: BALL_RADIUS,
+    vx,
+    vy,
+    startVx: vx,
+    startVy: vy,
+    speed: BALL_BASE_SPEED,
+    isReal: false,
   };
-}
-
-function addBall() {
-  balls.push(createBall());
 }
 
 function resetBall() {
   balls = [createBall()];
-  realBallId = balls[0].id;
+  balls[0].isReal = true;
+
+  waitingServe = true;
+  serveTimer = 0;
+
+  balls[0].vx = 0;
+  balls[0].vy = 0;
 }
 
-function initGame() {
-  createPaddles();
-  resetBall();
-  scoreLeft = 0;
-  scoreRight = 0;
-  gameOver = false;
-  updateScoreboard();
-}
-
+// ---------- Input ----------
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'w' || e.key === 'W') keys.w = true;
-  if (e.key === 's' || e.key === 'S') keys.s = true;
-  if (e.key === 'q' || e.key === 'Q') {
-    addBall();
-  }
-  if (e.key === 'ArrowUp') {
-    keys.ArrowUp = true;
-    e.preventDefault();
-  }
-  if (e.key === 'ArrowDown') {
-    keys.ArrowDown = true;
-    e.preventDefault();
-  }
-  if (e.key === 'Escape') togglePause();
+  if (e.key === 'w') keys.w = true;
+  if (e.key === 's') keys.s = true;
+  if (e.key === 'ArrowUp') keys.ArrowUp = true;
+  if (e.key === 'ArrowDown') keys.ArrowDown = true;
 });
 
 window.addEventListener('keyup', (e) => {
-  if (e.key === 'w' || e.key === 'W') keys.w = false;
-  if (e.key === 's' || e.key === 'S') keys.s = false;
+  if (e.key === 'w') keys.w = false;
+  if (e.key === 's') keys.s = false;
   if (e.key === 'ArrowUp') keys.ArrowUp = false;
   if (e.key === 'ArrowDown') keys.ArrowDown = false;
 });
 
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    togglePause();
+  }
+});
+
+// ---------- Movimiento ----------
 function movePaddles() {
+  if (!leftPaddle || !rightPaddle) return;
+
   if (keys.w) leftPaddle.y -= PADDLE_SPEED;
   if (keys.s) leftPaddle.y += PADDLE_SPEED;
+
   if (keys.ArrowUp) rightPaddle.y -= PADDLE_SPEED;
   if (keys.ArrowDown) rightPaddle.y += PADDLE_SPEED;
 
@@ -136,226 +170,290 @@ function movePaddles() {
   rightPaddle.y = Math.max(0, Math.min(H - rightPaddle.h, rightPaddle.y));
 }
 
-function getOutOfBounds(ball) {
-  if (ball.x + ball.r < 0) return 'RIGHT';
-  if (ball.x - ball.r > W) return 'LEFT';
-  return null;
-}
-
-// ---------- Física de la pelota ----------
-function updateBall(ball) {
-  ball.x += ball.vx;
-  ball.y += ball.vy;
-
-  // Colisión con techo/piso
-  if (ball.y - ball.r <= 0) {
-    ball.y = ball.r;
-    ball.vy *= -1;
-  } else if (ball.y + ball.r >= H) {
-    ball.y = H - ball.r;
-    ball.vy *= -1;
-  }
-
-  // Colisión con paleta izquierda
-  if (
-    ball.x - ball.r <= leftPaddle.x + leftPaddle.w &&
-    ball.x - ball.r >= leftPaddle.x &&
-    ball.y >= leftPaddle.y &&
-    ball.y <= leftPaddle.y + leftPaddle.h &&
-    ball.vx < 0
-  ) {
-    bounceFromPaddle(ball, leftPaddle);
-  }
-
-  // Colisión con paleta derecha
-  if (
-    ball.x + ball.r >= rightPaddle.x &&
-    ball.x + ball.r <= rightPaddle.x + rightPaddle.w &&
-    ball.y >= rightPaddle.y &&
-    ball.y <= rightPaddle.y + rightPaddle.h &&
-    ball.vx > 0
-  ) {
-    bounceFromPaddle(ball, rightPaddle);
-  }
-}
-
 function bounceFromPaddle(ball, paddle) {
   const relativeIntersect =
     (ball.y - (paddle.y + paddle.h / 2)) / (paddle.h / 2);
-  const bounceAngle = relativeIntersect * (Math.PI / 3);
 
-  // pelota cada vez mas rapida
-  ball.speed = Math.min(ball.speed + 0.4, 14);
+  const MAX_BOUNCE = Math.PI / 3;
+  let angle = relativeIntersect * MAX_BOUNCE;
 
   const direction = paddle === leftPaddle ? 1 : -1;
-  ball.vx = Math.cos(bounceAngle) * ball.speed * direction;
-  ball.vy = Math.sin(bounceAngle) * ball.speed;
+
+  const speedBefore = ball.speed;
+
+  ball.speed = Math.min(ball.speed + 0.1, MAX_SPEED);
+
+  ball.vx = Math.cos(angle) * ball.speed * direction;
+  ball.vy = Math.sin(angle) * ball.speed;
+
+  if (isNaN(ball.vx) || isNaN(ball.vy)) {
+    console.log(
+      'NaN EN BOUNCE! ball.id=',
+      ball.id,
+      'isReal=',
+      ball.isReal,
+      'speedBefore=',
+      speedBefore,
+      'speed=',
+      ball.speed,
+      'relativeIntersect=',
+      relativeIntersect,
+      'angle=',
+      angle,
+      'ball.y=',
+      ball.y,
+      'paddle.y=',
+      paddle.y,
+      'paddle.h=',
+      paddle.h,
+    );
+  }
+
+  const MIN_X = 2.5;
+  if (Math.abs(ball.vx) < MIN_X) {
+    ball.vx = MIN_X * direction;
+  }
 
   ball.x = direction === 1 ? paddle.x + paddle.w + ball.r : paddle.x - ball.r;
 }
 
-function duplicateBalls() {
-  const currentBalls = [...balls];
-  balls = [];
+// ---------- Física ----------
+function updateBall(ball) {
+  ball.x += ball.vx;
+  ball.y += ball.vy;
 
-  currentBalls.forEach((ball) => {
-    for (let i = 0; i < 2; i++) {
-      balls.push({
-        ...ball,
-        vx: ball.vx + (Math.random() * 2 - 1),
-        vy: ball.vy + (Math.random() * 2 - 1),
-        real: false,
-        id: nextBallId++,
-      });
-    }
-  });
+  if (ball.id === realBallId) {
+    const noise = (Math.random() - 0.5) * realVisibility * 0.02;
+    ball.vx += noise;
+    ball.vy += noise * 0.3;
+  }
 
-  const randomIndex = Math.floor(Math.random() * balls.length);
-  realBallId = balls[randomIndex].id;
-}
+  const maxSpeed = Math.min(MAX_SPEED + difficulty * 0.15, 12);
+  const speed = Math.hypot(ball.vx, ball.vy);
 
-function duplicationWarning() {
-  changeWarning = true;
+  if (speed > maxSpeed) {
+    ball.vx = (ball.vx / speed) * maxSpeed;
+    ball.vy = (ball.vy / speed) * maxSpeed;
+  }
 
-  setTimeout(() => {
-    duplicateBalls();
-    changeWarning = false;
-  }, 200);
-}
+  // Techo / piso
+  if (ball.y - ball.r <= 0) {
+    ball.y = ball.r;
+    ball.vy *= -1;
+  }
+  if (ball.y + ball.r >= H) {
+    ball.y = H - ball.r;
+    ball.vy *= -1;
+  }
 
-function handlePoint() {
-  updateScoreboard();
+  if (
+    ball.vx < 0 &&
+    ball.x - ball.r <= leftPaddle.x + leftPaddle.w &&
+    ball.x + ball.r >= leftPaddle.x &&
+    ball.y >= leftPaddle.y &&
+    ball.y <= leftPaddle.y + leftPaddle.h
+  ) {
+    bounceFromPaddle(ball, leftPaddle);
+  }
 
-  if (scoreLeft >= WINNING_SCORE || scoreRight >= WINNING_SCORE) {
-    endGame();
-  } else {
-    resetBall();
+  if (
+    ball.vx > 0 &&
+    ball.x + ball.r >= rightPaddle.x &&
+    ball.x - ball.r <= rightPaddle.x + rightPaddle.w &&
+    ball.y >= rightPaddle.y &&
+    ball.y <= rightPaddle.y + rightPaddle.h
+  ) {
+    bounceFromPaddle(ball, rightPaddle);
+  }
+
+  if (Math.abs(ball.vx) < 0.5) ball.vx *= 1.05;
+  if (Math.abs(ball.vy) < 0.5) ball.vy *= 1.05;
+
+  if (isNaN(ball.vx) || isNaN(ball.vy) || isNaN(ball.x) || isNaN(ball.y)) {
+    console.log(
+      'NaN AL FINAL DE updateBall! ball.id=',
+      ball.id,
+      'isReal=',
+      ball.isReal,
+    );
   }
 }
 
-function updateScoreboard() {
+// ---------- lógica real ----------
+function checkScore() {
+  const real = balls.find((b) => b.isReal);
+  if (!real) {
+    console.log('checkScore: NO HAY BOLA REAL, balls.length=', balls.length);
+    return;
+  }
+
+  if (real.x + real.r < 0) {
+    scoreRight++;
+    handlePoint();
+    return;
+  }
+
+  if (real.x - real.r > W) {
+    scoreLeft++;
+    handlePoint();
+    return;
+  }
+
   scoreLeftEl.textContent = scoreLeft;
   scoreRightEl.textContent = scoreRight;
 }
 
-function endGame() {
-  running = false;
-  gameOver = true;
-  const winner =
-    scoreLeft >= WINNING_SCORE
-      ? 'Jugador Izquierdo (azul)'
-      : 'Jugador Derecho (rojo)';
-  overlayText.textContent = `¡${winner} gana!`;
-  btnStart.textContent = 'JUGAR DE NUEVO';
-  overlay.classList.remove('hidden');
+function changeRealBall() {
+  if (balls.length === 0) return;
+
+  const real = balls.find((b) => b.isReal);
+  if (!real) return;
+
+  const SAFE_MARGIN = W * 0.15;
+
+  if (real.x < SAFE_MARGIN || real.x > W - SAFE_MARGIN) return;
+
+  balls.forEach((b) => (b.isReal = false));
+
+  const index = Math.floor(Math.random() * balls.length);
+  balls[index].isReal = true;
+
+  console.log(
+    'NUEVO REAL ASIGNADO: id=',
+    balls[index].id,
+    'x=',
+    balls[index].x.toFixed(1),
+    'y=',
+    balls[index].y.toFixed(1),
+    'total bolas=',
+    balls.length,
+  );
 }
 
-function startGame() {
-  if (paused) {
-    togglePause();
-    return;
-  }
-  if (gameOver) {
-    initGame();
-  }
-  running = true;
-  paused = false;
-  overlay.classList.add('hidden');
+function getRealChangeInterval() {
+  const base = Math.max(1000, 5000 - difficulty * 200);
+  return base + (Math.random() * 400 - 200);
 }
 
-function togglePause() {
-  // Solo se puede pausar si la partida está en curso (no antes de iniciar ni terminada)
-  if (!running && !paused) return;
-  if (gameOver) return;
+function safeSpawn() {
+  return {
+    x: W * 0.5 + (Math.random() - 0.5) * W * 0.4,
+    y: H * 0.5 + (Math.random() - 0.5) * H * 0.4,
+  };
+}
 
-  paused = !paused;
+// ---------- duplicación CONTROLADA ----------
+function duplicateBalls() {
+  if (balls.length >= MAX_BALLS) return;
 
-  if (paused) {
-    overlayText.textContent = 'Pausa';
-    btnStart.textContent = 'CONTINUAR';
-    overlay.classList.remove('hidden');
-  } else {
-    overlay.classList.add('hidden');
+  const real = balls.find((b) => b.isReal);
+  if (!real) return;
+
+  const spaceLeft = MAX_BALLS - balls.length;
+  const toCreate = Math.min(spaceLeft, Math.max(1, 2));
+
+  for (let i = 0; i < toCreate; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = Math.hypot(real.vx, real.vy) || BALL_BASE_SPEED;
+
+    const spawn = safeSpawn();
+    const vx = Math.cos(angle) * speed;
+    const vy = Math.sin(angle) * speed;
+
+    balls.push({
+      id: nextBallId++,
+      isReal: false,
+      x: spawn.x,
+      y: spawn.y,
+      r: BALL_RADIUS,
+      vx: vx,
+      vy: vy,
+      speed: speed,
+      startVx: vx,
+      startVy: vy,
+    });
   }
 }
 
-btnStart.addEventListener('click', startGame);
-
-// ---------- Dibujo ----------
-function draw() {
-  // fondo
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, W, H);
-
-  // linea del medio
-  ctx.strokeStyle = '#333';
-  ctx.lineWidth = 2;
-  ctx.setLineDash([10, 12]);
-  ctx.beginPath();
-  ctx.moveTo(W / 2, 0);
-  ctx.lineTo(W / 2, H);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  // paletas
-  ctx.fillStyle = leftPaddle.color;
-  ctx.fillRect(leftPaddle.x, leftPaddle.y, leftPaddle.w, leftPaddle.h);
-
-  ctx.fillStyle = rightPaddle.color;
-  ctx.fillRect(rightPaddle.x, rightPaddle.y, rightPaddle.w, rightPaddle.h);
-
-  if (changeWarning) {
-    ctx.fillStyle = 'rgba(255,255,255,0.05)';
-    ctx.fillRect(0, 0, W, H);
+function cleanBalls() {
+  const realBeforeFilter = balls.find((b) => b.isReal);
+  if (realBeforeFilter) {
+    const outOfBounds =
+      realBeforeFilter.x + realBeforeFilter.r <= -200 ||
+      realBeforeFilter.x - realBeforeFilter.r >= W + 200 ||
+      realBeforeFilter.y + realBeforeFilter.r <= -200 ||
+      realBeforeFilter.y - realBeforeFilter.r >= H + 200;
   }
 
-  // pelotas
-  balls.forEach((ball) => {
-    ctx.fillStyle =
-      ball.id === realBallId
-        ? '#ffffff'
-        : changeWarning
-          ? '#aaaaaa'
-          : '#666666';
-
-    ctx.beginPath();
-    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
-    ctx.fill();
+  balls = balls.filter((b) => {
+    return (
+      b.x + b.r > -200 &&
+      b.x - b.r < W + 200 &&
+      b.y + b.r > -200 &&
+      b.y - b.r < H + 200
+    );
   });
+
+  if (balls.length === 0) {
+    resetBall();
+  }
 }
 
+function getDuplicationInterval() {
+  return 1200;
+}
+
+// ---------- score ----------
+function handlePoint() {
+  difficulty++;
+
+  const real = balls.find((b) => b.isReal);
+  if (!real) return;
+
+  real.x = W / 2;
+  real.y = H / 2;
+  real.vx = real.startVx;
+  real.vy = real.startVy;
+
+  balls = [real];
+
+  waitingServe = true;
+  serveTimer = 0;
+  real.vx = 0;
+  real.vy = 0;
+}
+
+// ---------- loop ----------
 function gameLoop() {
   if (running && !paused) {
-    movePaddles();
+    if (waitingServe) {
+      serveTimer += 16;
 
-    balls.forEach((ball) => updateBall(ball));
+      if (serveTimer >= serveDelay) {
+        waitingServe = false;
 
-    const realBall = balls.find((b) => b.id === realBallId);
-
-    if (realBall) {
-      const out = getOutOfBounds(realBall);
-
-      if (out === 'LEFT') {
-        scoreLeft++;
-        handlePoint();
-      }
-
-      if (out === 'RIGHT') {
-        scoreRight++;
-        handlePoint();
+        balls[0].vx = balls[0].startVx;
+        balls[0].vy = balls[0].startVy;
       }
     }
 
-    duplicationTimer += 16.6;
+    movePaddles();
+    balls.forEach(updateBall);
 
-    if (duplicationTimer >= DUPLICATION_INTERVAL) {
+    checkScore();
+    cleanBalls();
+
+    duplicationTimer += 16;
+    realChangeTimer += 16;
+
+    if (duplicationTimer >= getDuplicationInterval()) {
       duplicateBalls();
       duplicationTimer = 0;
     }
 
-    if (duplicationTimer >= DUPLICATION_INTERVAL - 500 && !changeWarning) {
-      duplicationWarning();
-      duplicationTimer = 0;
+    if (realChangeTimer >= getRealChangeInterval()) {
+      changeRealBall();
+      realChangeTimer = 0;
     }
   }
 
@@ -363,6 +461,60 @@ function gameLoop() {
   requestAnimationFrame(gameLoop);
 }
 
-initGame();
-draw();
+function togglePause() {
+  if (!running && !gameOver) return;
+
+  paused = !paused;
+
+  if (paused) {
+    overlay.classList.remove('hidden');
+    overlayText.textContent = 'PAUSA';
+    btnStart.textContent = 'CONTINUAR';
+  } else {
+    overlay.classList.add('hidden');
+    btnStart.textContent = 'PAUSA';
+  }
+}
+
+// ---------- draw ----------
+function draw() {
+  if (!leftPaddle || !rightPaddle) return;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = leftPaddle.color;
+  ctx.fillRect(leftPaddle.x, leftPaddle.y, leftPaddle.w, leftPaddle.h);
+
+  ctx.fillStyle = rightPaddle.color;
+  ctx.fillRect(rightPaddle.x, rightPaddle.y, rightPaddle.w, rightPaddle.h);
+
+  balls.forEach((b) => {
+    ctx.fillStyle = b.isReal ? '#fff' : '#888';
+
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function initGame() {
+  createPaddles();
+  resetBall();
+
+  scoreLeft = 0;
+  scoreRight = 0;
+  gameOver = false;
+}
+
+// ---------- start ----------
+function startGame() {
+  initGame();
+
+  running = true;
+  paused = false;
+
+  overlay.classList.add('hidden');
+  btnStart.textContent = 'JUEGO EN CURSO';
+}
+
 gameLoop();
