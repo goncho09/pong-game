@@ -186,29 +186,6 @@ function bounceFromPaddle(ball, paddle) {
   ball.vx = Math.cos(angle) * ball.speed * direction;
   ball.vy = Math.sin(angle) * ball.speed;
 
-  if (isNaN(ball.vx) || isNaN(ball.vy)) {
-    console.log(
-      'NaN EN BOUNCE! ball.id=',
-      ball.id,
-      'isReal=',
-      ball.isReal,
-      'speedBefore=',
-      speedBefore,
-      'speed=',
-      ball.speed,
-      'relativeIntersect=',
-      relativeIntersect,
-      'angle=',
-      angle,
-      'ball.y=',
-      ball.y,
-      'paddle.y=',
-      paddle.y,
-      'paddle.h=',
-      paddle.h,
-    );
-  }
-
   const MIN_X = 2.5;
   if (Math.abs(ball.vx) < MIN_X) {
     ball.vx = MIN_X * direction;
@@ -240,10 +217,21 @@ function updateBall(ball) {
   if (ball.y - ball.r <= 0) {
     ball.y = ball.r;
     ball.vy *= -1;
+
+    const MIN_X_BOUNCE = 3;
+    if (Math.abs(ball.vx) < MIN_X_BOUNCE) {
+      ball.vx = ball.vx >= 0 ? MIN_X_BOUNCE : -MIN_X_BOUNCE;
+    }
   }
+
   if (ball.y + ball.r >= H) {
     ball.y = H - ball.r;
     ball.vy *= -1;
+
+    const MIN_X_BOUNCE = 3;
+    if (Math.abs(ball.vx) < MIN_X_BOUNCE) {
+      ball.vx = ball.vx >= 0 ? MIN_X_BOUNCE : -MIN_X_BOUNCE;
+    }
   }
 
   if (
@@ -268,24 +256,11 @@ function updateBall(ball) {
 
   if (Math.abs(ball.vx) < 0.5) ball.vx *= 1.05;
   if (Math.abs(ball.vy) < 0.5) ball.vy *= 1.05;
-
-  if (isNaN(ball.vx) || isNaN(ball.vy) || isNaN(ball.x) || isNaN(ball.y)) {
-    console.log(
-      'NaN AL FINAL DE updateBall! ball.id=',
-      ball.id,
-      'isReal=',
-      ball.isReal,
-    );
-  }
 }
 
 // ---------- lógica real ----------
 function checkScore() {
   const real = balls.find((b) => b.isReal);
-  if (!real) {
-    console.log('checkScore: NO HAY BOLA REAL, balls.length=', balls.length);
-    return;
-  }
 
   if (real.x + real.r < 0) {
     scoreRight++;
@@ -309,7 +284,8 @@ function changeRealBall() {
   const real = balls.find((b) => b.isReal);
   if (!real) return;
 
-  const SAFE_MARGIN = W * 0.15;
+  const speed = Math.hypot(real.vx, real.vy) || BALL_BASE_SPEED;
+  const SAFE_MARGIN = Math.min(W * 0.25, Math.max(W * 0.1, speed * 15));
 
   if (real.x < SAFE_MARGIN || real.x > W - SAFE_MARGIN) return;
 
@@ -317,17 +293,6 @@ function changeRealBall() {
 
   const index = Math.floor(Math.random() * balls.length);
   balls[index].isReal = true;
-
-  console.log(
-    'NUEVO REAL ASIGNADO: id=',
-    balls[index].id,
-    'x=',
-    balls[index].x.toFixed(1),
-    'y=',
-    balls[index].y.toFixed(1),
-    'total bolas=',
-    balls.length,
-  );
 }
 
 function getRealChangeInterval() {
